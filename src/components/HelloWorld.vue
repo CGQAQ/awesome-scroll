@@ -14,8 +14,8 @@ export default defineComponent({
 
 <template>
   <div class="container">
-    <Scrollbar class="row scroll">
-      <div class="inner"></div>
+    <Scrollbar class="row scroll" :snap-vertical-bar-to-parent="true">
+      <div class="inner">test</div>
       <div class="inner"></div>
       <div class="inner"></div>
       <div class="inner"></div>

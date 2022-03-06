@@ -1,68 +1,107 @@
 <script>
-import {defineComponent, onMounted, onUnmounted, ref, computed} from "vue"
-import {minmax, realHeight} from "./utils"
+import { defineComponent, onMounted, onUnmounted, ref, computed } from "vue"
+import { minmax } from "./utils"
+
+// NOTE(CGQAQ):
+// pinter event momentX/Y for example:
+//   will be exactly `RATIO` times of the value it's should be,
+//   so we need to divided it by the RATIO when we're dealing with pointer event.
+const RATIO = window.devicePixelRatio;
 
 export default defineComponent({
   name: "awesome-scrollbar",
   props: {
     height: {
       type: String,
-      default: "100%"
+      required: false,
     },
     width: {
       type: String,
-      default: "100%"
+      required: false,
     },
-    scrollX: {
+    enableHorizontalScrollbar: {
       type: Boolean,
       default: false,
     },
-    scrollY: {
+    enableVerticalScrollbar: {
       type: Boolean,
       default: true,
     },
-    alwaysX: {
+    alwaysShowHorizontalBar: {
       type: Boolean,
       default: true,
     },
-    alwaysY: {
+    alwaysShowVerticalBar: {
       type: Boolean,
       default: true,
     },
-    snapX: {
+    snapHorizontalBarToParent: {
       type: Boolean,
-      default: true,
+      default: false,
     },
-    snapY: {
+    snapVerticalBarToParent: {
       type: Boolean,
-      default: true,
+      default: false,
     }
   },
-  setup(){
+  setup(props){
     const container$ = ref();
     const verticalBar$ = ref();
     const horizontalBar$ = ref();
     const verticalBarThumb$ = ref();
     const horizontalBarThumb$ = ref();
-    const containerHost$ = computed(() => container$.value.parentElement)
+    const containerHost$ = computed(() => container$.value?.parentElement);
+
+    // the container which scrollbar is snap to
+    // if snapX is true, the y-axis relative container should be the parent container
+    //   in order to make horizontal scroll bar snap to a fixed y position and vice versa.
+    const snapXContainer$ = computed(() => props.snapVerticalBarToParent ? containerHost$.value : container$.value);
+    const snapYContainer$ = computed(() => props.snapHorizontalBarToParent ? containerHost$.value : container$.value);
+
 
     const scrollHeight$ = ref(0);
     const scrollWidth$ = ref(0);
     const scrollX$ = ref(0);
     const scrollY$ = ref(0);
+    const scrollParentX$ = ref(0);
+    const scrollParentY$ = ref(0);
     const scrollXActive$ = ref(false);
     const scrollYActive$ = ref(false);
 
     let resizeObserver;
+    function onParentScroll(event) {
+      // event.preventDefault();
+      if (props.snapVerticalBarToParent) {
+        scrollParentX$.value = event.target.scrollLeft;
+        relocationVScroll();
+      } else if (props.snapHorizontalBarToParent) {
+        scrollParentY$.value = event.target.scrollTop;
+        relocationHScroll();
+      }
+    }
     onMounted(() => {
+      if (typeof props.height == "string") {
+        container$.value.style.height = props.height;
+      }
+      if (typeof props.width == "string") {
+        container$.value.style.width = props.width;
+      }
+      verticalBar$.value.style.display = props.enableVerticalScrollbar ? "block" : "none";
+      horizontalBar$.value.style.display = props.enableHorizontalScrollbar ? "block" : "none";
+
       resizeObserver = new ResizeObserver((entries) => {
         scrollHeight$.value = entries[0]?.target.scrollHeight ?? 0;
         scrollWidth$.value = entries[0]?.target.scrollWidth ?? 0;
       })
       resizeObserver.observe(container$.value);
 
-      const HPercent = containerHost$.value.clientHeight / container$.value.scrollHeight;
-      const WPercent = containerHost$.value.clientWidth / container$.value.scrollWidth;
+      if (props.snapHorizontalBarToParent || props.snapVerticalBarToParent) {
+        // snap horizontal bar to parent bottom
+        containerHost$.value?.addEventListener("scroll", onParentScroll);
+      }
+
+      const HPercent = snapYContainer$.value.clientHeight / container$.value.scrollHeight;
+      const WPercent = snapXContainer$.value.clientWidth / container$.value.scrollWidth;
       if (HPercent === 1) {
         // TODO(CGQAQ): hide thumb
 
@@ -83,21 +122,21 @@ export default defineComponent({
     onUnmounted(() => {
       resizeObserver.disconnect();
       resizeObserver = null;
+      containerHost$.value?.removeEventListener("scroll", onParentScroll);
     })
 
     function relocationHScroll() {
       horizontalBar$.value.style.top = `${
-          scrollY$.value + containerHost$.value.clientHeight - horizontalBar$.value.clientHeight
+          scrollY$.value + scrollParentY$.value + snapYContainer$.value.clientHeight - horizontalBar$.value.clientHeight
       }px`;
-      horizontalBar$.value.style.left = `${scrollX$.value}px`;
+      horizontalBar$.value.style.left = `${scrollX$.value / (snapXContainer$.value.scrollWidth - snapXContainer$.value.clientWidth) * (horizontalBar$.value.clientWidth - horizontalBarThumb$.value.clientWidth)}px`;
     }
 
     function relocationVScroll() {
       verticalBar$.value.style.left = `${
-          scrollX$.value + containerHost$.value.clientWidth - verticalBar$.value.clientWidth
+          scrollX$.value + scrollParentX$.value + snapXContainer$.value.clientWidth - verticalBar$.value.clientWidth
       }px`;
-      // console.log("222222", scrollX$.value, containerHost$.value.clientWidth, verticalBar$.value.clientWidth);
-      verticalBar$.value.style.top = `${scrollY$.value}px`;
+      verticalBar$.value.style.top = `${scrollY$.value}px`
     }
 
     /**
@@ -116,7 +155,7 @@ export default defineComponent({
      * @param {Number} fromTop Pixels from top
      */
     function scrollTop(fromTop) {
-      scrollY$.value = minmax(fromTop, 0, container$.value.scrollHeight - container$.value.clientHeight);
+      scrollY$.value = minmax(fromTop, 0, container$.value.scrollHeight - snapYContainer$.value.clientHeight);
       container$.value.scrollTop = scrollY$.value;
       relocationHScroll();
       relocationVScroll();
@@ -145,7 +184,7 @@ export default defineComponent({
       },
       onHorizontalPointerMove(event) {
         if (scrollXActive$.value) {
-          scrollLeft(scrollX$.value + event.movementX / (horizontalBar$.value.clientWidth - horizontalBarThumb$.value.clientWidth) * container$.value.scrollHeight)
+          scrollLeft(scrollX$.value + event.movementX / RATIO / (horizontalBar$.value.clientWidth - horizontalBarThumb$.value.clientWidth) * (container$.value.scrollWidth - snapXContainer$.value.clientWidth))
         }
       },
 
@@ -154,12 +193,12 @@ export default defineComponent({
         verticalBarThumb$.value.setPointerCapture(event.pointerId);
       },
       onVerticalPointerUp(event) {
-        scrollYActive$.value = true;
+        scrollYActive$.value = false;
         verticalBarThumb$.value.releasePointerCapture(event.pointerId);
       },
       onVerticalPointerMove(event) {
         if (scrollYActive$.value) {
-          scrollTop(scrollY$.value + event.movementY / (verticalBar$.value.clientHeight - verticalBarThumb$.value.clientHeight) * container$.value.scrollHeight);
+          scrollTop(scrollY$.value + event.movementY / RATIO / (verticalBar$.value.clientHeight - verticalBarThumb$.value.clientHeight) * (container$.value.scrollHeight - snapYContainer$.value.clientHeight));
         }
       },
 
@@ -177,14 +216,13 @@ export default defineComponent({
         if (!horizontalBar$.value || !horizontalBarThumb$.value) {
           return 0;
         }
-        return (scrollX$.value / container$.value.scrollWidth) * (horizontalBar$.value.clientWidth - horizontalBarThumb$.value.clientWidth)
+        return (scrollX$.value / (container$.value.scrollWidth - snapXContainer$.value.clientWidth)) * (horizontalBar$.value.clientWidth - horizontalBarThumb$.value.clientWidth)
       }),
       vscrollOffset$: computed(() => {
         if (!verticalBar$.value || !verticalBarThumb$.value) {
           return 0;
         }
-        console.log(verticalBarThumb$.value.clientHeight, realHeight(verticalBarThumb$.value))
-        return (scrollY$.value / container$.value.scrollHeight) * (verticalBar$.value.clientHeight - verticalBarThumb$.value.clientHeight)
+        return (scrollY$.value / (container$.value.scrollHeight - snapYContainer$.value.clientHeight)) * (verticalBar$.value.clientHeight - verticalBarThumb$.value.clientHeight)
       }),
     }
   }
