@@ -1,6 +1,9 @@
 {
   "name": "awesome-scrollbar-vue",
   "version": "0.0.0",
+  "module": "dist/ascroll.es.js",
+  "main": "dist/ascroll.umd.js",
+  "style": "dist/style.css",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
